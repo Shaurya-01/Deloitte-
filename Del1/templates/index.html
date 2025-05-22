@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Level Quiz App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+            padding: 30px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+
+        .difficulty-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+
+        .beginner { background: #d4edda; color: #155724; }
+        .intermediate { background: #fff3cd; color: #856404; }
+        .hard { background: #f8d7da; color: #721c24; }
+
+        .progress-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .progress-info span {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .start-section {
+            text-align: center;
+        }
+
+        .topic-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 20px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .topic-input:focus {
+            border-color: #667eea;
+        }
+
+        .question-section {
+            display: none;
+        }
+
+        .question {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .question h3 {
+            color: #333;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+
+        .options {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .option {
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .option:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .option.selected {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+        }
+
+        .option.correct {
+            border-color: #28a745;
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .option.incorrect {
+            border-color: #dc3545;
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .message.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .results {
+            text-align: center;
+            display: none;
+        }
+
+        .final-scores {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .score-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border-top: 4px solid #667eea;
+        }
+
+        .score-card h4 {
+            margin-bottom: 5px;
+            text-transform: capitalize;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .feedback {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-weight: 500;
+        }
+
+        .feedback.correct {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .feedback.incorrect {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .progress-info {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .final-scores {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Multi-Level Quiz</h1>
+            <div id="difficulty-display"></div>
+        </div>
+
+        <div id="progress-info" class="progress-info" style="display: none;">
+            <span id="question-progress">Question 1 of 3</span>
+            <span id="current-score">Score: 0/3</span>
+            <span id="total-score">Total: 0</span>
+        </div>
+
+        <!-- Start Section -->
+        <div id="start-section" class="start-section">
+            <h2 style="margin-bottom: 20px; color: #495057;">Choose a Quiz Topic</h2>
+            <input type="text" id="topic-input" class="topic-input" placeholder="Enter topic (e.g., Science, History, Sports)" value="general knowledge">
+            <button id="start-btn" class="btn btn-primary">Start Quiz</button>
+        </div>
+
+        <!-- Loading Section -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Generating questions for all difficulty levels...</p>
+            <small>This may take a moment as we prepare 27 questions</small>
+        </div>
+
+        <!-- Question Section -->
+        <div id="question-section" class="question-section">
+            <div id="message-display"></div>
+            
+            <div class="question">
+                <h3 id="question-text"></h3>
+                <div id="options" class="options"></div>
+            </div>
+            
+            <div id="feedback"></div>
+            
+            <button id="submit-btn" class="btn btn-success" disabled>Submit Answer</button>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results" class="results">
+            <h2 style="margin-bottom: 20px;">🎉 Quiz Complete!</h2>
+            <div id="final-message"></div>
+            <div id="final-scores" class="final-scores"></div>
+            <button id="restart-btn" class="btn btn-primary">Start New Quiz</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedAnswer = null;
+
+        // DOM elements
+        const startSection = document.getElementById('start-section');
+        const questionSection = document.getElementById('question-section');
+        const resultsSection = document.getElementById('results');
+        const loadingSection = document.getElementById('loading');
+        const progressInfo = document.getElementById('progress-info');
+
+        const topicInput = document.getElementById('topic-input');
+        const startBtn = document.getElementById('start-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const restartBtn = document.getElementById('restart-btn');
+
+        const difficultyDisplay = document.getElementById('difficulty-display');
+        const questionProgress = document.getElementById('question-progress');
+        const currentScore = document.getElementById('current-score');
+        const totalScore = document.getElementById('total-score');
+        const questionText = document.getElementById('question-text');
+        const optionsContainer = document.getElementById('options');
+        const messageDisplay = document.getElementById('message-display');
+        const feedback = document.getElementById('feedback');
+
+        // Event listeners
+        startBtn.addEventListener('click', startQuiz);
+        submitBtn.addEventListener('click', submitAnswer);
+        restartBtn.addEventListener('click', restartQuiz);
+
+        async function startQuiz() {
+            const topic = topicInput.value.trim() || 'general knowledge';
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ topic: topic })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    showStart();
+                    return;
+                }
+
+                displayQuestion(data);
+                showQuestion();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to start quiz. Please try again.');
+                showStart();
+            }
+        }
+
+        async function submitAnswer() {
+            if (!selectedAnswer) return;
+
+            try {
+                const response = await fetch('/answer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ answer: selectedAnswer })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                // Show feedback
+                showFeedback(data);
+
+                if (data.done) {
+                    setTimeout(() => showResults(data), 2000);
+                } else {
+                    setTimeout(() => {
+                        displayQuestion(data);
+                        clearFeedback();
+                    }, 2000);
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to submit answer. Please try again.');
+            }
+        }
+
+        function displayQuestion(data) {
+            // Update difficulty display
+            const difficultyClass = data.difficulty || 'beginner';
+            difficultyDisplay.innerHTML = `<span class="difficulty-badge ${difficultyClass}">${(data.difficulty || 'beginner').toUpperCase()}</span>`;
+            
+            // Update progress info
+            questionProgress.textContent = `Question ${data.question_number || 1} of ${data.total_questions || 3}`;
+            currentScore.textContent = `Score: ${data.current_score || 0}/${data.total_questions || 3}`;
+            totalScore.textContent = `Total: ${data.total_score || 0}`;
+            
+            // Display message if present
+            if (data.message) {
+                messageDisplay.innerHTML = `<div class="message info">${data.message}</div>`;
+            } else {
+                messageDisplay.innerHTML = '';
+            }
+
+            // Display question
+            questionText.textContent = data.question.question;
+            
+            // Display options
+            optionsContainer.innerHTML = '';
+            Object.entries(data.question.options).forEach(([key, value]) => {
+                const option = document.createElement('div');
+                option.className = 'option';
+                option.textContent = `${key}. ${value}`;
+                option.addEventListener('click', () => selectOption(key, option));
+                optionsContainer.appendChild(option);
+            });
+
+            // Reset selection
+            selectedAnswer = null;
+            submitBtn.disabled = true;
+        }
+
+        function selectOption(answer, element) {
+            // Remove previous selection
+            document.querySelectorAll('.option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            
+            // Select new option
+            element.classList.add('selected');
+            selectedAnswer = answer;
+            submitBtn.disabled = false;
+        }
+
+        function showFeedback(data) {
+            let feedbackHTML = '';
+            
+            if (data.is_correct !== undefined) {
+                if (data.is_correct) {
+                    feedbackHTML = '<div class="feedback correct">✅ Correct! Well done!</div>';
+                } else {
+                    feedbackHTML = `<div class="feedback incorrect">❌ Incorrect. The correct answer was ${data.correct_answer}.</div>`;
+                }
+            }
+            
+            if (data.previous_score) {
+                feedbackHTML += `<div class="message info">Previous round score: ${data.previous_score}</div>`;
+            }
+            
+            feedback.innerHTML = feedbackHTML;
+            
+            // Highlight correct/incorrect answers
+            document.querySelectorAll('.option').forEach(option => {
+                const optionLetter = option.textContent.charAt(0);
+                if (data.correct_answer && optionLetter === data.correct_answer) {
+                    option.classList.add('correct');
+                }
+                if (selectedAnswer === optionLetter && !data.is_correct) {
+                    option.classList.add('incorrect');
+                }
+            });
+            
+            submitBtn.disabled = true;
+        }
+
+        function clearFeedback() {
+            feedback.innerHTML = '';
+        }
+
+        function showResults(data) {
+            const finalMessage = document.getElementById('final-message');
+            const finalScores = document.getElementById('final-scores');
+            
+            finalMessage.innerHTML = `<div class="message success">${data.message}</div>`;
+            
+            if (data.final_scores) {
+                let scoresHTML = '';
+                Object.entries(data.final_scores).forEach(([difficulty, score]) => {
+                    scoresHTML += `
+                        <div class="score-card">
+                            <h4>${difficulty}</h4>
+                            <div>${score}/3</div>
+                        </div>
+                    `;
+                });
+                finalScores.innerHTML = scoresHTML;
+            }
+            
+            if (data.total_score !== undefined) {
+                finalScores.innerHTML += `
+                    <div class="score-card" style="border-top-color: #28a745;">
+                        <h4>Total Score</h4>
+                        <div>${data.total_score}/${data.max_score || 9}</div>
+                    </div>
+                `;
+            }
+            
+            showResults();
+        }
+
+        function restartQuiz() {
+            fetch('/reset', { method: 'POST' })
+                .then(() => {
+                    selectedAnswer = null;
+                    showStart();
+                })
+                .catch(error => {
+                    console.error('Error resetting quiz:', error);
+                    showStart(); // Show start anyway
+                });
+        }
+
+        function showStart() {
+            startSection.style.display = 'block';
+            questionSection.style.display = 'none';
+            resultsSection.style.display = 'none';
+            loadingSection.style.display = 'none';
+            progressInfo.style.display = 'none';
+        }
+
+        function showLoading() {
+            startSection.style.display = 'none';
+            questionSection.style.display = 'none';
+            resultsSection.style.display = 'none';
+            loadingSection.style.display = 'block';
+            progressInfo.style.display = 'none';
+        }
+
+        function showQuestion() {
+            startSection.style.display = 'none';
+            questionSection.style.display = 'block';
+            resultsSection.style.display = 'none';
+            loadingSection.style.display = 'none';
+            progressInfo.style.display = 'flex';
+        }
+
+        function showResults() {
+            startSection.style.display = 'none';
+            questionSection.style.display = 'none';
+            resultsSection.style.display = 'block';
+            loadingSection.style.display = 'none';
+            progressInfo.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
