@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Progressive Quiz App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 4px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #fff;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .start-form {
+            text-align: center;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .question-type-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0f8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .quiz-area {
+            display: none;
+        }
+
+        .level-indicator {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .level-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: white;
+            margin: 0 10px;
+        }
+
+        .level-beginner { background: #28a745; }
+        .level-intermediate { background: #ffc107; color: #000; }
+        .level-advanced { background: #dc3545; }
+
+        .question-type-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .type-mcq {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .type-subjective {
+            background: #fce4ec;
+            color: #c2185b;
+        }
+
+        .question-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .question-number {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .question-points {
+            background: #4CAF50;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .question-text {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .options {
+            list-style: none;
+        }
+
+        .option {
+            margin-bottom: 12px;
+        }
+
+        .option label {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .option label:hover {
+            border-color: #4CAF50;
+            background: #f0f8f0;
+        }
+
+        .option input[type="radio"] {
+            margin-right: 12px;
+        }
+
+        .subjective-answer {
+            width: 100%;
+            min-height: 120px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .subjective-answer:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .answer-counter {
+            text-align: right;
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .quiz-controls {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .result-card {
+            display: none;
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 20px;
+        }
+
+        .score-summary {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .score {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+
+        .score.pass { color: #28a745; }
+        .score.fail { color: #dc3545; }
+
+        .points-display {
+            font-size: 1.2em;
+            color: #666;
+            margin: 10px 0;
+        }
+
+        .message {
+            font-size: 16px;
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .detailed-results {
+            margin: 30px 0;
+        }
+
+        .detailed-results h3 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .result-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #ddd;
+        }
+
+        .result-item.correct {
+            border-left-color: #28a745;
+        }
+
+        .result-item.incorrect {
+            border-left-color: #dc3545;
+        }
+
+        .result-item.partial {
+            border-left-color: #ffc107;
+        }
+
+        .result-question {
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .result-answer {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .result-feedback {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .final-scores {
+            margin-top: 20px;
+        }
+
+        .final-scores h3 {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .score-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px;
+            background: white;
+            margin: 8px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .quiz-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .quiz-info h4 {
+            margin-bottom: 10px;
+            color: #1976d2;
+        }
+
+        .quiz-info p {
+            margin: 5px 0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .question-card {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Progressive Quiz</h1>
+            <p>Master topics through progressive difficulty levels with mixed question types</p>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Start Quiz Form -->
+            <div id="startForm" class="start-form">
+                <div class="input-group">
+                    <label for="topic">Enter Quiz Topic:</label>
+                    <input type="text" id="topic" placeholder="e.g., JavaScript, Python, History, Science..." required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="questionType">Question Type:</label>
+                    <select id="questionType">
+                        <option value="mixed">Mixed (MCQ + Subjective)</option>
+                        <option value="mcq_only">Multiple Choice Only</option>
+                        <option value="subjective_only">Subjective Only</option>
+                    </select>
+                    <div class="question-type-info" id="questionTypeInfo">
+                        Mix of multiple-choice and subjective questions for comprehensive assessment
+                    </div>
+                </div>
+                
+                <button class="btn" onclick="startQuiz()">Start Progressive Quiz</button>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p id="loadingText">Generating questions...</p>
+            </div>
+
+            <!-- Quiz Area -->
+            <div id="quizArea" class="quiz-area">
+                <div id="quizInfo" class="quiz-info">
+                    <h4>Quiz Information</h4>
+                    <p><strong>Topic:</strong> <span id="quizTopic"></span></p>
+                    <p><strong>Question Type:</strong> <span id="currentQuestionType"></span></p>
+                    <p><strong>Level:</strong> <span id="currentLevel" class="level-badge">Beginner</span></p>
+                </div>
+                
+                <div id="levelIndicator" class="level-indicator">
+                    <p>Score more than 50% to advance to the next level!</p>
+                </div>
+
+                <div id="questionsContainer"></div>
+
+                <div class="quiz-controls">
+                    <button class="btn" onclick="submitQuiz()" id="submitBtn">Submit Quiz</button>
+                </div>
+
+                <div id="resultCard" class="result-card">
+                    <div class="score-summary">
+                        <div id="scoreDisplay" class="score"></div>
+                        <div id="pointsDisplay" class="points-display"></div>
+                        <div id="messageDisplay" class="message"></div>
+                    </div>
+                    
+                    <div id="detailedResults" class="detailed-results" style="display: none;"></div>
+                    
+                    <div id="finalScores" class="final-scores" style="display: none;"></div>
+                    
+                    <div style="text-align: center;">
+                        <button class="btn" onclick="continueQuiz()" id="continueBtn" style="display: none;">Continue to Next Level</button>
+                        <button class="btn" onclick="retryLevel()" id="retryBtn" style="display: none;">Try Again</button>
+                        <button class="btn" onclick="startNewQuiz()" id="newQuizBtn" style="display: none;">Start New Quiz</button>
+                        <button class="btn" onclick="toggleDetailedResults()" id="toggleResultsBtn" style="display: none;">Show Detailed Results</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        let currentQuestions = [];
+        let currentLevel = 'beginner';
+        let currentTopic = '';
+        let currentQuestionType = 'mixed';
+        let detailedResultsVisible = false;
+
+        // Question type descriptions
+        const questionTypeDescriptions = {
+            'mixed': 'Mix of multiple-choice and subjective questions for comprehensive assessment',
+            'mcq_only': 'Only multiple-choice questions with instant feedback',
+            'subjective_only': 'Only essay/short answer questions with AI-powered evaluation'
+        };
+
+        // Update question type info when selection changes
+        document.getElementById('questionType').addEventListener('change', function() {
+            const selectedType = this.value;
+            document.getElementById('questionTypeInfo').textContent = questionTypeDescriptions[selectedType];
+        });
+
+        async function startQuiz() {
+            const topic = document.getElementById('topic').value.trim();
+            const questionType = document.getElementById('questionType').value;
+            
+            if (!topic) {
+                alert('Please enter a topic');
+                return;
+            }
+
+            currentTopic = topic;
+            currentQuestionType = questionType;
+            showLoading(true, 'Generating questions...');
+            
+            try {
+                const formData = new FormData();
+                formData.append('topic', topic);
+                formData.append('question_type', questionType);
+
+                const response = await fetch('/start_quiz', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                currentSessionId = data.session_id;
+                currentQuestions = data.questions;
+                currentLevel = data.level;
+
+                updateQuizInfo(topic, questionType, data.level);
+                displayQuestions(data.questions, data.level);
+                showQuizArea();
+                updateProgress(0);
+                
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function updateQuizInfo(topic, questionType, level) {
+            document.getElementById('quizTopic').textContent = topic;
+            document.getElementById('currentQuestionType').textContent = questionTypeDescriptions[questionType];
+            
+            const levelBadge = document.getElementById('currentLevel');
+            levelBadge.textContent = level.charAt(0).toUpperCase() + level.slice(1);
+            levelBadge.className = `level-badge level-${level}`;
+        }
+
+        function displayQuestions(questions, level) {
+            const container = document.getElementById('questionsContainer');
+            
+            // Clear previous questions
+            container.innerHTML = '';
+            
+            questions.forEach((question, index) => {
+                const questionCard = document.createElement('div');
+                questionCard.className = 'question-card';
+                
+                let questionContent = '';
+                
+                if (question.type === 'mcq') {
+                    questionContent = `
+                        <div class="question-header">
+                            <div>
+                                <div class="question-number">Question ${index + 1} of ${questions.length}</div>
+                                <span class="question-type-badge type-mcq">MCQ</span>
+                            </div>
+                            <div class="question-points">${question.points} pts</div>
+                        </div>
+                        <div class="question-text">${question.question}</div>
+                        <ul class="options">
+                            ${question.options.map((option, optIndex) => `
+                                <li class="option">
+                                    <label>
+                                        <input type="radio" name="question_${index}" value="${option}">
+                                        ${option}
+                                    </label>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    `;
+                } else if (question.type === 'subjective') {
+                    questionContent = `
+                        <div class="question-header">
+                            <div>
+                                <div class="question-number">Question ${index + 1} of ${questions.length}</div>
+                                <span class="question-type-badge type-subjective">ESSAY</span>
+                            </div>
+                            <div class="question-points">${question.points} pts</div>
+                        </div>
+                        <div class="question-text">${question.question}</div>
+                        <textarea 
+                            class="subjective-answer" 
+                            name="question_${index}" 
+                            placeholder="Type your answer here... (Be detailed and specific)"
+                            onkeyup="updateCharCount(${index})"
+                        ></textarea>
+                        <div class="answer-counter" id="counter_${index}">0 characters</div>
+                    `;
+                }
+                
+                questionCard.innerHTML = questionContent;
+                container.appendChild(questionCard);
+            });
+        }
+
+        function updateCharCount(questionIndex) {
+            const textarea = document.querySelector(`textarea[name="question_${questionIndex}"]`);
+            const counter = document.getElementById(`counter_${questionIndex}`);
+            const count = textarea.value.length;
+            counter.textContent = `${count} characters`;
+            
+            // Change color based on length
+            if (count < 50) {
+                counter.style.color = '#dc3545';
+            } else if (count < 150) {
+                counter.style.color = '#ffc107';
+            } else {
+                counter.style.color = '#28a745';
+            }
+        }
+
+        async function submitQuiz() {
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+            
+            showLoading(true, 'Evaluating answers...');
+
+            try {
+                // Collect and submit answers
+                for (let i = 0; i < currentQuestions.length; i++) {
+                    let answer = '';
+                    
+                    if (currentQuestions[i].type === 'mcq') {
+                        const selectedOption = document.querySelector(`input[name="question_${i}"]:checked`);
+                        if (selectedOption) {
+                            answer = selectedOption.value;
+                        }
+                    } else if (currentQuestions[i].type === 'subjective') {
+                        const textarea = document.querySelector(`textarea[name="question_${i}"]`);
+                        if (textarea) {
+                            answer = textarea.value.trim();
+                        }
+                    }
+                    
+                    if (answer) {
+                        const formData = new FormData();
+                        formData.append('session_id', currentSessionId);
+                        formData.append('question_index', i);
+                        formData.append('answer', answer);
+                        
+                        await fetch('/submit_answer', {
+                            method: 'POST',
+                            body: formData
+                        });
+                    }
+                }
+
+                // Submit the entire quiz
+                const formData = new FormData();
+                formData.append('session_id', currentSessionId);
+
+                const response = await fetch('/submit_quiz', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                displayResult(data);
+                
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                showLoading(false);
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Quiz';
+            }
+        }
+
+        function displayResult(data) {
+            const resultCard = document.getElementById('resultCard');
+            const scoreDisplay = document.getElementById('scoreDisplay');
+            const pointsDisplay = document.getElementById('pointsDisplay');
+            const messageDisplay = document.getElementById('messageDisplay');
+            const detailedResults = document.getElementById('detailedResults');
+            const finalScores = document.getElementById('finalScores');
+            const continueBtn = document.getElementById('continueBtn');
+            const retryBtn = document.getElementById('retryBtn');
+            const newQuizBtn = document.getElementById('newQuizBtn');
+            const toggleResultsBtn = document.getElementById('toggleResultsBtn');
+
+            // Display score and points
+            scoreDisplay.textContent = `${data.score.toFixed(1)}%`;
+            scoreDisplay.className = `score ${data.passed ? 'pass' : 'fail'}`;
+            
+            if (data.total_score !== undefined && data.max_score !== undefined) {
+                pointsDisplay.textContent = `${data.total_score}/${data.max_score} points`;
+            }
+
+            // Display message
+            messageDisplay.textContent = data.message;
+            messageDisplay.className = `message ${data.passed ? 'success' : 'error'}`;
+
+            // Display detailed results if available
+            if (data.detailed_results) {
+                displayDetailedResults(data.detailed_results);
+                toggleResultsBtn.style.display = 'inline-block';
+            } else {
+                toggleResultsBtn.style.display = 'none';
+            }
+
+            // Handle different scenarios
+            if (data.quiz_completed) {
+                // Quiz completed - show final scores
+                finalScores.style.display = 'block';
+                finalScores.innerHTML = `
+                    <h3>Final Scores</h3>
+                    ${Object.entries(data.final_scores).map(([level, score]) => `
+                        <div class="score-item">
+                            <span>${level.charAt(0).toUpperCase() + level.slice(1)}</span>
+                            <span>${score.toFixed(1)}%</span>
+                        </div>
+                    `).join('')}
+                `;
+                newQuizBtn.style.display = 'inline-block';
+                continueBtn.style.display = 'none';
+                retryBtn.style.display = 'none';
+                updateProgress(100);
+            } else if (data.passed && data.next_level) {
+                // Passed and moving to next level
+                currentQuestions = data.questions;
+                currentLevel = data.next_level;
+                continueBtn.style.display = 'inline-block';
+                retryBtn.style.display = 'none';
+                newQuizBtn.style.display = 'none';
+                updateProgress(data.next_level === 'intermediate' ? 33 : 66);
+            } else {
+                // Failed - retry same level
+                currentQuestions = data.questions;
+                retryBtn.style.display = 'inline-block';
+                continueBtn.style.display = 'none';
+                newQuizBtn.style.display = 'none';
+            }
+
+            resultCard.style.display = 'block';
+            resultCard.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function displayDetailedResults(results) {
+            const detailedResults = document.getElementById('detailedResults');
+            
+            let html = '<h3>Detailed Results</h3>';
+            
+            results.forEach((result, index) => {
+                let className = 'result-item';
+                if (result.type === 'mcq') {
+                    className += result.is_correct ? ' correct' : ' incorrect';
+                } else {
+                    const percentage = (result.score / result.max_score) * 100;
+                    if (percentage >= 80) className += ' correct';
+                    else if (percentage >= 50) className += ' partial';
+                    else className += ' incorrect';
+                }
+                
+                let answerHtml = '';
+                if (result.type === 'mcq') {
+                    answerHtml = `
+                        <div class="result-answer">
+                            <strong>Your answer:</strong> ${result.user_answer || 'Not answered'}<br>
+                            <strong>Correct answer:</strong> ${result.correct_answer}
+                        </div>
+                    `;
+                } else {
+                    answerHtml = `
+                        <div class="result-answer">
+                            <strong>Your answer:</strong> ${result.user_answer || 'Not answered'}<br>
+                            <strong>Model answer:</strong> ${result.model_answer}
+                        </div>
+                    `;
+                }
+                
+                html += `
+                    <div class="${className}">
+                        <div class="result-question">
+                            Question ${index + 1}: ${currentQuestions[index].question}
+                            <span style="float: right;">${result.score}/${result.max_score} pts</span>
+                        </div>
+                        ${answerHtml}
+                        <div class="result-feedback">${result.feedback}</div>
+                    </div>
+                `;
+            });
+            
+            detailedResults.innerHTML = html;
+        }
+
+        function toggleDetailedResults() {
+            const detailedResults = document.getElementById('detailedResults');
+            const toggleBtn = document.getElementById('toggleResultsBtn');
+            
+            detailedResultsVisible = !detailedResultsVisible;
+            detailedResults.style.display = detailedResultsVisible ? 'block' : 'none';
+            toggleBtn.textContent = detailedResultsVisible ? 'Hide Detailed Results' : 'Show Detailed Results';
+        }
+
+        function continueQuiz() {
+            updateQuizInfo(currentTopic, currentQuestionType, currentLevel);
+            displayQuestions(currentQuestions, currentLevel);
+            document.getElementById('resultCard').style.display = 'none';
+            detailedResultsVisible = false;
+        }
+
+        function retryLevel() {
+            displayQuestions(currentQuestions, currentLevel);
+            document.getElementById('resultCard').style.display = 'none';
+            detailedResultsVisible = false;
+        }
+
+        function startNewQuiz() {
+            // Reset everything
+            currentSessionId = null;
+            currentQuestions = [];
+            currentLevel = 'beginner';
+            currentTopic = '';
+            currentQuestionType = 'mixed';
+            detailedResultsVisible = false;
+            
+            document.getElementById('startForm').style.display = 'block';
+            document.getElementById('quizArea').style.display = 'none';
+            document.getElementById('resultCard').style.display = 'none';
+            document.getElementById('topic').value = '';
+            document.getElementById('questionType').value = 'mixed';
+            document.getElementById('questionTypeInfo').textContent = questionTypeDescriptions['mixed'];
+            updateProgress(0);
+        }
+
+        function showQuizArea() {
+            document.getElementById('startForm').style.display = 'none';
+            document.getElementById('quizArea').style.display = 'block';
+        }
+
+        function showLoading(show, text = 'Loading...') {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            if (show && text) {
+                document.getElementById('loadingText').textContent = text;
+            }
+        }
+
+        function updateProgress(percentage) {
+            document.getElementById('progressFill').style.width = percentage + '%';
+        }
+    </script>
+</body>
+</html>
