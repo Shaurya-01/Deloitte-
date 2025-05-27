@@ -22,8 +22,6 @@ quiz_sessions: Dict[str, Dict[str, Any]] = {}
 DIFFICULTY_LEVELS = ["beginner", "intermediate", "advanced"]
 QUESTION_TYPES = ["mixed", "mcq_only", "subjective_only"]
 
-# ------------------ Helpers (copied from FastAPI code) ------------------
-
 def clean_json_response(content: str) -> str:
     content = re.sub(r'```json\s*', '', content)
     content = re.sub(r'```\s*', '', content)
@@ -39,9 +37,18 @@ def clean_json_response(content: str) -> str:
     content = re.sub(r',\s*]', ']', content)
     return content.strip()
 
-def validate_and_fix_questions(questions_data: List[Dict]) -> List[Dict]:
+def is_python_mcq_ambiguous(question: str, options: List[str], answer: str) -> bool:
+    python_types = {"int", "float", "str", "list", "tuple", "set", "dict", "bool", "complex", "bytes", "frozenset", "bytearray", "range"}
+    corrects = [opt for opt in options if opt.lower() in python_types]
+    ambiguous_keywords = ["built-in type", "data type", "python type", "datatype"]
+    if any(kw in question.lower() for kw in ambiguous_keywords) and len(corrects) > 1:
+        return True
+    return False
+
+def validate_and_fix_questions(questions_data: List[Dict], prev_all_questions: List[str]=None) -> List[Dict]:
     fixed_questions = []
-    for i, q in enumerate(questions_data):
+    seen_questions = set(prev_all_questions or [])
+    for q in questions_data:
         if not isinstance(q, dict):
             continue
         if "question" not in q or "type" not in q or "answer" not in q:
@@ -49,9 +56,13 @@ def validate_and_fix_questions(questions_data: List[Dict]) -> List[Dict]:
         question_type = q.get("type", "").lower()
         if question_type not in ["mcq", "subjective"]:
             continue
+        question_text = str(q["question"]).strip()
+        if question_text in seen_questions:
+            continue
+        seen_questions.add(question_text)
         clean_question = {
             "type": question_type,
-            "question": str(q["question"]).strip(),
+            "question": question_text,
             "answer": str(q["answer"]).strip(),
             "points": int(q.get("points", 2 if question_type == "mcq" else 4))
         }
@@ -63,48 +74,52 @@ def validate_and_fix_questions(questions_data: List[Dict]) -> List[Dict]:
             clean_question["options"] = clean_options
             if clean_question["answer"] not in clean_options:
                 continue
+            if is_python_mcq_ambiguous(question_text, clean_options, clean_question["answer"]):
+                continue
         else:
             clean_question["options"] = None
+            if not clean_question["answer"] or clean_question["answer"].lower() in ["", "n/a", "none"]:
+                continue
         fixed_questions.append(clean_question)
     return fixed_questions
 
-def generate_mixed_questions_prompt(topic, difficulty):
+def generate_mixed_questions_prompt(topic, difficulty, all_prev_questions=None):
     difficulty_specs = {
         "beginner": "basic understanding, simple concepts, foundational knowledge",
-        "intermediate": "moderate complexity, practical applications, connecting concepts", 
+        "intermediate": "moderate complexity, real-world scenarios, integration of concepts",
         "advanced": "complex analysis, critical thinking, expert-level insights"
     }
     spec = difficulty_specs.get(difficulty, "appropriate level")
+    uniqueness = ""
+    if all_prev_questions:
+        uniqueness = (
+            "\nAVOID REPETITION:\n"
+            "Do NOT repeat any of these questions (or very similar ones):\n"
+            + "\n".join(f"- {q}" for q in all_prev_questions if q)
+            + "\n"
+        )
     return f"""
-You are an expert educator creating a high-quality quiz. Generate EXACTLY 5 questions on "{topic}" for {difficulty} level ({spec}).
+You are a master quiz maker. Generate EXACTLY 5 unique, high-quality questions on "{topic}" for {difficulty} level ({spec}).
 
 MANDATORY REQUIREMENTS:
-- Exactly 5 questions total (2-3 MCQs + 2-3 subjective)
-- Return ONLY valid JSON array, no explanations
-- Ensure questions are pedagogically sound and engaging
+- 2-3 MCQs and 2-3 Subjective (open-ended) questions, total exactly 5.
+- MCQs: Each must have 4 plausible options and **exactly one unambiguously correct answer**; the other three must be clearly incorrect. Do NOT use questions where multiple options could be correct.
+- Subjective: Must require analysis, synthesis, evaluation, creativity, and real-world application.
+- Avoid simple recall or yes/no. All questions must be unique, non-trivial, and increase in cognitive demand with each level.
+- Return ONLY a valid JSON array, NO explanations or markdown.
 
-MCQ QUALITY STANDARDS:
-- Test genuine understanding, not just memorization
-- Create plausible distractors (wrong options that seem reasonable)
-- Avoid "all of the above" or "none of the above" options
-- Make questions scenario-based when possible
-
-SUBJECTIVE QUALITY STANDARDS:
-- Require analysis, synthesis, evaluation, or creativity
-- Use Bloom's taxonomy higher-order thinking skills
-- Include real-world applications and critical thinking
-- Avoid simple recall or yes/no questions
+{uniqueness}
 
 DIFFICULTY-SPECIFIC GUIDELINES:
 {difficulty.title()} Level:
-- {"Focus on fundamental concepts and basic applications" if difficulty == "beginner" else 
-  "Include practical scenarios and moderate complexity" if difficulty == "intermediate" else
-  "Require deep analysis, evaluation, and expert-level reasoning"}
+- {"Beginner: focus on core concepts and basic applications." if difficulty=="beginner" else
+   "Intermediate: application, scenario-based, integration of concepts." if difficulty=="intermediate" else
+   "Advanced: critical thinking, analysis, creative synthesis."}
 
 FORMAT:
 [
-  {{"type": "mcq", "question": "scenario_based_question", "options": ["A", "B", "C", "D"], "answer": "correct_option", "points": 2}},
-  {{"type": "subjective", "question": "analytical_question", "options": null, "answer": "comprehensive_model_answer", "points": 4}}
+    {{"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "...", "points": 2}},
+    {{"type": "subjective", "question": "...", "options": null, "answer": "...", "points": 4}}
 ]
 
 TOPIC: {topic}
@@ -112,91 +127,96 @@ LEVEL: {difficulty}
 COUNT: Exactly 5 questions (verify count before responding)
 """
 
-def generate_mcq_only_prompt(topic, difficulty):
+def generate_mcq_only_prompt(topic, difficulty, all_prev_questions=None):
     difficulty_specs = {
         "beginner": "foundational concepts, basic terminology, simple applications",
-        "intermediate": "practical scenarios, moderate complexity, applied knowledge", 
-        "advanced": "complex scenarios, expert-level analysis, nuanced understanding"
+        "intermediate": "practical scenarios, moderate complexity, applied knowledge, integration of concepts", 
+        "advanced": "complex scenarios, expert-level analysis, nuanced understanding, require reasoning"
     }
+    uniqueness = ""
+    if all_prev_questions:
+        uniqueness = (
+            "\nAVOID REPEATS:\n"
+            "Do NOT repeat any of these questions (or similar):\n"
+            + "\n".join(f"- {q}" for q in all_prev_questions if q)
+            + "\n"
+        )
     spec = difficulty_specs.get(difficulty, "appropriate level")
     return f"""
-Create EXACTLY 5 high-quality multiple-choice questions on "{topic}" for {difficulty} level.
+Create EXACTLY 5 unique, high-quality multiple-choice questions (MCQs) on "{topic}" for {difficulty} level.
 
-QUALITY REQUIREMENTS:
-- Test conceptual understanding, not just memorization
-- Use realistic scenarios and practical applications
-- Create believable distractors (wrong answers that seem plausible)
-- Vary question stems (What, Why, How, Which, When used appropriately)
-- Avoid trivial or ambiguous questions
+{uniqueness}
+
+REQUIREMENTS:
+- Test conceptual understanding and application, not just memorization.
+- Use realistic, scenario-based questions where possible.
+- Each MCQ must have 4 plausible options and **exactly one unambiguously correct answer; the other three must be clearly incorrect**. Avoid any question where more than one answer could be correct (e.g., avoid “Which of these is a built-in type in Python?”).
+- Do not use questions where multiple options could be reasonably correct.
+- Use common misconceptions as distractors.
+- Vary question stems (What, Why, How, Which, When).
+- Avoid trivial, ambiguous, or repeated questions.
 
 DIFFICULTY CALIBRATION ({difficulty.title()}):
 {spec}
 
-DISTRACTOR GUIDELINES:
-- Make wrong options reasonable but clearly incorrect to experts
-- Avoid obviously wrong or silly options
-- Include common misconceptions as distractors
-- Ensure only one clearly correct answer
-
-FORMAT: JSON array with exactly 5 MCQ objects
-[{{"type": "mcq", "question": "well_crafted_question", "options": ["A", "B", "C", "D"], "answer": "correct_option", "points": 2}}]
+FORMAT: JSON array, exactly 5 MCQs
+[{{"type": "mcq", "question": "...", "options": ["A", "B", "C", "D"], "answer": "...", "points": 2}}]
 
 TOPIC: {topic}
-VERIFY: Count must be exactly 5 questions
+VERIFY: Count must be exactly 5 and all must be unique and unambiguous.
 """
 
-def generate_subjective_only_prompt(topic, difficulty):
+def generate_subjective_only_prompt(topic, difficulty, all_prev_questions=None):
     bloom_levels = {
         "beginner": "Understanding and Application - explain, describe, demonstrate, apply basic concepts",
-        "intermediate": "Analysis and Synthesis - analyze, compare, contrast, organize, integrate concepts",
-        "advanced": "Evaluation and Creation - evaluate, critique, design, propose, create new solutions"
+        "intermediate": "Analysis and Synthesis - analyze, compare, contrast, organize, integrate concepts in real contexts",
+        "advanced": "Evaluation and Creation - evaluate, critique, design, propose, create new solutions, integrate multiple topics"
     }
+    uniqueness = ""
+    if all_prev_questions:
+        uniqueness = (
+            "\nAVOID REPEATS:\n"
+            "Do NOT repeat any of these questions (or similar):\n"
+            + "\n".join(f"- {q}" for q in all_prev_questions if q)
+            + "\n"
+        )
     bloom_level = bloom_levels.get(difficulty, "appropriate cognitive level")
     return f"""
-Generate EXACTLY 5 high-quality subjective questions on "{topic}" for {difficulty} level.
+Generate EXACTLY 5 unique, high-quality subjective (open-ended) questions on "{topic}" for {difficulty} level.
+
+{uniqueness}
 
 COGNITIVE DEPTH REQUIRED ({difficulty.title()}):
 {bloom_level}
 
-QUESTION QUALITY STANDARDS:
-- Require extended responses (not one-word answers)
-- Promote critical thinking and deep analysis  
-- Include real-world applications and scenarios
-- Encourage personal reflection and professional insight
-- Avoid questions with single "correct" answers
-
-QUESTION TYPES TO INCLUDE:
-1. Analytical questions (Why/How analysis)
-2. Comparative questions (Compare/Contrast)
-3. Evaluative questions (Assess/Judge/Critique)
-4. Application questions (Real-world scenarios)
-5. Reflective questions (Personal insights/implications)
+REQUIREMENTS:
+- Require extended, thoughtful responses (not one-word).
+- Must demand critical thinking, deep analysis, and real-world application.
+- NO repeats, NO simple recall.
+- Each question must require multiple key points and perspectives.
 
 MODEL ANSWER REQUIREMENTS:
-- Provide comprehensive, well-structured sample answers
-- Include multiple key points and perspectives
-- Demonstrate the depth expected from students
-- Show clear reasoning and examples
+- Provide comprehensive, well-structured sample answers showing depth, reasoning, and multiple viewpoints.
 
-FORMAT: JSON array with exactly 5 subjective objects
-[{{"type": "subjective", "question": "thought_provoking_question", "options": null, "answer": "comprehensive_model_answer_with_multiple_points", "points": 4}}]
+FORMAT: JSON array, exactly 5 subjective objects
+[{{"type": "subjective", "question": "...", "options": null, "answer": "...", "points": 4}}]
 
 TOPIC: {topic}
 COGNITIVE LEVEL: {difficulty}
-VERIFY: Must be exactly 5 questions
+VERIFY: Must be exactly 5, all unique and non-repetitive.
 """
 
 def evaluate_subjective_answer_prompt(question, model_answer, user_answer, points):
     return f"""
 You are an expert educator evaluating a subjective answer. Use a comprehensive rubric to assess the response fairly.
 
-EVALUATION RUBRIC:
+RUBRIC:
 - Content Knowledge (40%): Accuracy and depth of subject matter understanding
-- Critical Thinking (30%): Analysis, reasoning, and insight demonstrated  
-- Communication (20%): Clarity, organization, and coherence of response
-- Examples/Evidence (10%): Use of relevant examples or supporting evidence
+- Critical Thinking (30%): Analysis, reasoning, and insight
+- Communication (20%): Clarity, organization, and coherence
+- Examples/Evidence (10%): Relevant examples or supporting evidence
 
-SCORING GUIDELINES:
+SCORING GUIDELINES (strict, no grade inflation):
 {points} points (90-100%): Exceptional - Comprehensive, insightful, well-reasoned, excellent examples
 {points-1} points (80-89%): Proficient - Good understanding, clear reasoning, adequate examples
 {points-2} points (70-79%): Developing - Basic understanding, some reasoning, limited examples
@@ -204,36 +224,32 @@ SCORING GUIDELINES:
 0-{max(0,points-4)} points (0-59%): Inadequate - Little to no understanding or reasoning
 
 QUESTION: {question}
-
 MODEL ANSWER: {model_answer}
-
 STUDENT ANSWER: {user_answer}
 
 EVALUATION CRITERIA:
 1. Does the answer demonstrate understanding of key concepts?
 2. Is there evidence of critical thinking and analysis?
 3. Are ideas communicated clearly and logically?
-4. Are examples or evidence provided to support points?
+4. Are examples or evidence provided?
 5. Does the response address the question comprehensively?
 
-Return ONLY this JSON format:
-{{"score": number_0_to_{points}, "feedback": "specific_constructive_feedback_with_strengths_and_improvements", "percentage": percentage_number, "rubric_breakdown": {{"content": score_out_of_40, "thinking": score_out_of_30, "communication": score_out_of_20, "examples": score_out_of_10}}}}
-
-Provide specific, actionable feedback that helps the student improve.
+Return ONLY this JSON:
+{{"score": number_0_to_{points}, "feedback": "specific_constructive_feedback", "percentage": percentage_number, "rubric_breakdown": {{"content": score_out_of_40, "thinking": score_out_of_30, "communication": score_out_of_20, "examples": score_out_of_10}}}}
 """
 
 def run_async(coro):
     return asyncio.run(coro)
 
-async def fetch_questions(topic: str, difficulty: str, question_type: str = "mixed", retry_count: int = 0):
+async def fetch_questions(topic: str, difficulty: str, question_type: str = "mixed", retry_count: int = 0, all_prev_questions: List[str]=None):
     if retry_count >= 3:
-        return generate_fallback_questions(topic, difficulty, question_type)
+        return generate_fallback_questions(topic, difficulty, question_type, all_prev_questions)
     if question_type == "mcq_only":
-        prompt = generate_mcq_only_prompt(topic, difficulty)
+        prompt = generate_mcq_only_prompt(topic, difficulty, all_prev_questions)
     elif question_type == "subjective_only":
-        prompt = generate_subjective_only_prompt(topic, difficulty)
+        prompt = generate_subjective_only_prompt(topic, difficulty, all_prev_questions)
     else:
-        prompt = generate_mixed_questions_prompt(topic, difficulty)
+        prompt = generate_mixed_questions_prompt(topic, difficulty, all_prev_questions)
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
@@ -241,11 +257,11 @@ async def fetch_questions(topic: str, difficulty: str, question_type: str = "mix
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.4,
-        "max_tokens": 1500,
+        "temperature": 0.25 if difficulty == "advanced" else 0.35 if difficulty == "intermediate" else 0.4,
+        "max_tokens": 1700,
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=40.0) as client:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 json=payload,
@@ -267,115 +283,182 @@ async def fetch_questions(topic: str, difficulty: str, question_type: str = "mix
                     try:
                         questions_data = json.loads(potential_json)
                     except json.JSONDecodeError:
-                        return await fetch_questions(topic, difficulty, question_type, retry_count + 1)
+                        return await fetch_questions(topic, difficulty, question_type, retry_count + 1, all_prev_questions)
                 else:
                     raise Exception("Could not extract valid JSON from response")
             if not isinstance(questions_data, list):
                 raise Exception(f"Expected list, got {type(questions_data)}")
-            fixed_questions = validate_and_fix_questions(questions_data)
+            fixed_questions = validate_and_fix_questions(questions_data, all_prev_questions)
             if len(fixed_questions) < 5:
                 needed_questions = 5 - len(fixed_questions)
                 additional_questions = generate_additional_questions(
-                    topic, difficulty, question_type, needed_questions, fixed_questions
+                    topic, difficulty, question_type, needed_count=needed_questions,
+                    existing_questions=fixed_questions, prev_all_questions=all_prev_questions
                 )
                 fixed_questions.extend(additional_questions)
             elif len(fixed_questions) > 5:
                 fixed_questions = fixed_questions[:5]
             if len(fixed_questions) != 5:
                 if retry_count < 2:
-                    return await fetch_questions(topic, difficulty, question_type, retry_count + 1)
+                    return await fetch_questions(topic, difficulty, question_type, retry_count + 1, all_prev_questions)
                 else:
-                    return generate_fallback_questions(topic, difficulty, question_type)
+                    return generate_fallback_questions(topic, difficulty, question_type, all_prev_questions)
             return fixed_questions
     except Exception:
         if retry_count < 2:
-            return await fetch_questions(topic, difficulty, question_type, retry_count + 1)
+            return await fetch_questions(topic, difficulty, question_type, retry_count + 1, all_prev_questions)
         else:
-            return generate_fallback_questions(topic, difficulty, question_type)
+            return generate_fallback_questions(topic, difficulty, question_type, all_prev_questions)
 
-def generate_additional_questions(topic: str, difficulty: str, question_type: str, needed_count: int, existing_questions: List[Dict]) -> List[Dict]:
+def generate_additional_questions(topic: str, difficulty: str, question_type: str, needed_count: int, existing_questions: List[Dict], prev_all_questions: List[str]=None) -> List[Dict]:
     additional_questions = []
     existing_mcq_count = sum(1 for q in existing_questions if q["type"] == "mcq")
-    existing_subjective_count = sum(1 for q in existing_questions if q["type"] == "subjective")
+    used_questions = set(prev_all_questions or [])
+    used_questions.update(q["question"] for q in existing_questions)
+    if "python" in topic.lower():
+        mcq_templates = [
+            {
+                "question": f"What is the output of print(2 + 3 * 2) in Python?",
+                "options": ["8", "10", "12", "7"],
+                "answer": "8"
+            },
+            {
+                "question": f"Which of these is a valid Python variable name?",
+                "options": ["my_var1", "1st_var", "var-2", "my var"],
+                "answer": "my_var1"
+            },
+            {
+                "question": f"What will be the result of: my_list = [1, 2, 3]; print(my_list[-1])?",
+                "options": ["1", "3", "2", "Error"],
+                "answer": "3"
+            },
+            {
+                "question": f"What is the correct way to define a function in Python?",
+                "options": ["def myfunc():", "function myfunc():", "define myfunc():", "func myfunc():"],
+                "answer": "def myfunc():"
+            },
+            {
+                "question": f"What will this code print: for i in range(3): print(i)?",
+                "options": ["0 1 2", "1 2 3", "0 1 2 3", "1 2"],
+                "answer": "0 1 2"
+            },
+        ]
+        subjective_templates = [
+            f"Explain the difference between a list and a tuple in Python.",
+            f"Describe how you would handle errors in a Python program.",
+            f"Discuss the importance of indentation in Python.",
+            f"Describe how to use a for loop to iterate over a list in Python.",
+            f"Explain what a dictionary is in Python and give an example."
+        ]
+    else:
+        mcq_templates = [
+            {
+                "question": f"What is a key concept in {topic}?",
+                "options": [f"A correct concept", f"Incorrect concept 1", f"Incorrect concept 2", f"Incorrect concept 3"],
+                "answer": f"A correct concept"
+            },
+            {
+                "question": f"Which of the following best explains {topic}?",
+                "options": [f"Accurate summary", f"Misconception", f"Partial truth", f"Unrelated fact"],
+                "answer": f"Accurate summary"
+            },
+            {
+                "question": f"What is a common application of {topic}?",
+                "options": [f"Real-world use", f"Not an application", f"Rarely used", f"Incorrect use"],
+                "answer": f"Real-world use"
+            },
+            {
+                "question": f"Which statement about {topic} is false?",
+                "options": [f"True fact", f"False statement", f"Another fact", f"Another false"],
+                "answer": f"False statement"
+            },
+            {
+                "question": f"What is the main advantage of {topic}?",
+                "options": [f"Correct advantage", f"Incorrect", f"Irrelevant", f"Partial"],
+                "answer": f"Correct advantage"
+            },
+        ]
+        subjective_templates = [
+            f"Explain an important aspect of {topic} and why it matters.",
+            f"Discuss challenges faced in {topic} and how to address them.",
+            f"Describe a real-world scenario where {topic} is applied.",
+            f"Compare {topic} to a related concept.",
+            f"Predict how {topic} might evolve in the future."
+        ]
     for i in range(needed_count):
-        if question_type == "mcq_only":
-            additional_questions.append({
-                "type": "mcq",
-                "question": f"Additional multiple choice question {i+1} about {topic} ({difficulty} level). Choose the best answer:",
-                "options": [f"Option A for {topic}", f"Option B for {topic}", f"Option C for {topic}", f"Option D for {topic}"],
-                "answer": f"Option A for {topic}",
-                "points": 2
-            })
-        elif question_type == "subjective_only":
-            additional_questions.append({
-                "type": "subjective",
-                "question": f"Discuss your thoughts on an important aspect of {topic} that you find most relevant for {difficulty} level learners. Explain your reasoning with examples.",
-                "options": None,
-                "answer": f"This question asks for personal reflection on {topic}, considering its relevance and importance. A good answer should include specific examples, clear reasoning, and demonstrate understanding appropriate for {difficulty} level.",
-                "points": 4
-            })
+        found = False
+        if question_type == "mcq_only" or (question_type == "mixed" and (existing_mcq_count + len([q for q in additional_questions if q["type"] == "mcq"])) < 3):
+            for template in mcq_templates:
+                if template["question"] not in used_questions:
+                    additional_questions.append({
+                        "type": "mcq",
+                        "question": template["question"],
+                        "options": template["options"],
+                        "answer": template["answer"],
+                        "points": 2
+                    })
+                    used_questions.add(template["question"])
+                    found = True
+                    break
         else:
-            if (existing_mcq_count + len([q for q in additional_questions if q["type"] == "mcq"])) < 3:
-                additional_questions.append({
-                    "type": "mcq",
-                    "question": f"Additional MCQ about {topic} ({difficulty} level). What is the most important aspect?",
-                    "options": [f"Aspect A of {topic}", f"Aspect B of {topic}", f"Aspect C of {topic}", f"Aspect D of {topic}"],
-                    "answer": f"Aspect A of {topic}",
-                    "points": 2
-                })
-            else:
-                additional_questions.append({
-                    "type": "subjective",
-                    "question": f"Explain how {topic} impacts daily life at a {difficulty} level. Provide specific examples and discuss both benefits and challenges.",
-                    "options": None,
-                    "answer": f"The impact of {topic} on daily life includes both positive effects such as improved efficiency and convenience, as well as challenges like complexity and adaptation requirements. Specific examples would vary based on individual circumstances and the particular aspects of {topic} being considered.",
-                    "points": 4
-                })
+            for template in subjective_templates:
+                if template not in used_questions:
+                    additional_questions.append({
+                        "type": "subjective",
+                        "question": template,
+                        "options": None,
+                        "answer": f"A strong answer explains the topic with clear examples and reasoning.",
+                        "points": 4
+                    })
+                    used_questions.add(template)
+                    found = True
+                    break
+        if not found:
+            break
     return additional_questions
 
-def generate_fallback_questions(topic: str, difficulty: str, question_type: str) -> List[Dict]:
+def generate_fallback_questions(topic: str, difficulty: str, question_type: str, prev_all_questions: List[str]=None) -> List[Dict]:
     fallback_questions = []
+    used_questions = set(prev_all_questions or [])
+    fallback_mcqs = [
+        {
+            "question": f"Fallback MCQ: Which statement best describes {topic}?",
+            "options": ["A broad overview", "A limited view", "A misconception", "An unrelated fact"],
+            "answer": "A broad overview"
+        },
+        {
+            "question": f"Fallback MCQ: What would be a key application of {topic} in real life?",
+            "options": ["Correct use", "Incorrect use", "Irrelevant use", "Uncommon use"],
+            "answer": "Correct use"
+        }
+    ]
+    fallback_subjectives = [
+        f"Fallback: Discuss why {topic} is important for {difficulty} learners.",
+        f"Fallback: Analyze potential drawbacks and benefits of {topic}.",
+        f"Fallback: Predict future developments in {topic} and their possible impact."
+    ]
     if question_type in ["mixed", "mcq_only"]:
-        fallback_questions.extend([
-            {
-                "type": "mcq",
-                "question": f"This is a sample multiple choice question about {topic}. What is the correct answer?",
-                "options": ["Option A", "Option B", "Option C", "Option D"],
-                "answer": "Option A",
-                "points": 2
-            },
-            {
-                "type": "mcq",
-                "question": f"Another sample MCQ about {topic} for {difficulty} level. Choose the best answer:",
-                "options": ["Choice 1", "Choice 2", "Choice 3", "Choice 4"],
-                "answer": "Choice 1",
-                "points": 2
-            }
-        ])
+        for fallback in fallback_mcqs:
+            if fallback["question"] not in used_questions:
+                fallback_questions.append({
+                    "type": "mcq",
+                    "question": fallback["question"],
+                    "options": fallback["options"],
+                    "answer": fallback["answer"],
+                    "points": 2
+                })
+                used_questions.add(fallback["question"])
     if question_type in ["mixed", "subjective_only"]:
-        fallback_questions.extend([
-            {
-                "type": "subjective",
-                "question": f"Explain why you think {topic} is important in today's world. Discuss at least three key reasons with examples.",
-                "options": None,
-                "answer": f"The importance of {topic} in today's world can be seen through multiple perspectives: 1) Its practical applications in daily life, 2) Its impact on society and culture, 3) Its role in shaping future developments. Each aspect contributes to our understanding and interaction with {topic}.",
-                "points": 4
-            },
-            {
-                "type": "subjective",
-                "question": f"What are the main benefits and challenges associated with {topic}? Analyze both positive and negative aspects.",
-                "options": None,
-                "answer": f"The benefits of {topic} include improved understanding, practical applications, and societal advancement. However, challenges may include complexity in implementation, resource requirements, and potential negative consequences that need careful consideration.",
-                "points": 4
-            },
-            {
-                "type": "subjective",
-                "question": f"How do you think {topic} will evolve in the future? Discuss potential developments and their implications.",
-                "options": None,
-                "answer": f"The future evolution of {topic} likely involves technological advancement, changing societal needs, and emerging challenges. These developments could lead to new opportunities while requiring adaptive approaches to maximize benefits and minimize risks.",
-                "points": 4
-            }
-        ])
+        for fallback in fallback_subjectives:
+            if fallback not in used_questions:
+                fallback_questions.append({
+                    "type": "subjective",
+                    "question": fallback,
+                    "options": None,
+                    "answer": f"A strong answer covers all aspects with examples.",
+                    "points": 4
+                })
+                used_questions.add(fallback)
     return fallback_questions[:5]
 
 async def evaluate_subjective_answer(question: str, model_answer: str, user_answer: str, max_points: int):
@@ -394,11 +477,11 @@ async def evaluate_subjective_answer(question: str, model_answer: str, user_answ
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": 400,
+        "temperature": 0.15,
+        "max_tokens": 450,
     }
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=25.0) as client:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 json=payload,
@@ -507,8 +590,6 @@ def generate_rubric_breakdown(user_answer: str, score: int, max_points: int):
 def generate_session_id():
     return str(uuid.uuid4())
 
-# ------------------ Flask routes ------------------
-
 @app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
@@ -535,12 +616,14 @@ def start_quiz():
         "subjective_evaluations": [],
         "scores": {"beginner": 0, "intermediate": 0, "advanced": 0},
         "completed_levels": [],
+        "all_questions": [],
         "quiz_completed": False
     }
-    questions = run_async(fetch_questions(topic.strip(), DIFFICULTY_LEVELS[0], question_type))
+    questions = run_async(fetch_questions(topic.strip(), DIFFICULTY_LEVELS[0], question_type, 0, []))
     quiz_sessions[session_id]["current_questions"] = questions
     quiz_sessions[session_id]["user_answers"] = [None] * len(questions)
     quiz_sessions[session_id]["subjective_evaluations"] = [None] * len(questions)
+    quiz_sessions[session_id]["all_questions"] = [q["question"] for q in questions]
     return jsonify({
         "session_id": session_id,
         "level": DIFFICULTY_LEVELS[0],
@@ -568,7 +651,8 @@ def submit_quiz():
     if not session_id or session_id not in quiz_sessions:
         return jsonify({"error": "Invalid session"}), 400
     session = quiz_sessions[session_id]
-    current_level = DIFFICULTY_LEVELS[session["current_level"]]
+    current_level_idx = session["current_level"]
+    current_level = DIFFICULTY_LEVELS[current_level_idx]
     questions = session["current_questions"]
     user_answers = session["user_answers"]
     if not questions:
@@ -619,17 +703,24 @@ def submit_quiz():
                 "evaluation": evaluation
             })
         total_score += score
+
     score_percentage = (total_score / max_possible_score) * 100 if max_possible_score > 0 else 0
     session["scores"][current_level] = score_percentage
+
+    session["all_questions"].extend([q["question"] for q in questions if q["question"] not in session["all_questions"]])
+
     if score_percentage > 50:
         session["completed_levels"].append(current_level)
         if session["current_level"] < len(DIFFICULTY_LEVELS) - 1:
             session["current_level"] += 1
             next_level = DIFFICULTY_LEVELS[session["current_level"]]
-            questions = run_async(fetch_questions(session["topic"], next_level, session["question_type"]))
-            session["current_questions"] = questions
-            session["user_answers"] = [None] * len(questions)
-            session["subjective_evaluations"] = [None] * len(questions)
+            questions = run_async(fetch_questions(
+                session["topic"], next_level, session["question_type"], 0, session["all_questions"]
+            ))
+            quiz_sessions[session_id]["current_questions"] = questions
+            quiz_sessions[session_id]["user_answers"] = [None] * len(questions)
+            quiz_sessions[session_id]["subjective_evaluations"] = [None] * len(questions)
+            quiz_sessions[session_id]["all_questions"].extend([q["question"] for q in questions if q["question"] not in quiz_sessions[session_id]["all_questions"]])
             return jsonify({
                 "passed": True,
                 "score": round(score_percentage, 1),
@@ -641,7 +732,7 @@ def submit_quiz():
                 "message": f"Congratulations! You scored {score_percentage:.1f}% ({total_score}/{max_possible_score} points). Moving to {next_level} level."
             })
         else:
-            session["quiz_completed"] = True
+            quiz_sessions[session_id]["quiz_completed"] = True
             return jsonify({
                 "passed": True,
                 "score": round(score_percentage, 1),
@@ -649,14 +740,17 @@ def submit_quiz():
                 "max_score": max_possible_score,
                 "detailed_results": detailed_results,
                 "quiz_completed": True,
-                "final_scores": session["scores"],
+                "final_scores": quiz_sessions[session_id]["scores"],
                 "message": f"Congratulations! You've completed all levels with a final score of {score_percentage:.1f}% ({total_score}/{max_possible_score} points)!"
             })
     else:
-        questions = run_async(fetch_questions(session["topic"], current_level, session["question_type"]))
-        session["current_questions"] = questions
-        session["user_answers"] = [None] * len(questions)
-        session["subjective_evaluations"] = [None] * len(questions)
+        questions = run_async(fetch_questions(
+            session["topic"], current_level, session["question_type"], 0, session["all_questions"]
+        ))
+        quiz_sessions[session_id]["current_questions"] = questions
+        quiz_sessions[session_id]["user_answers"] = [None] * len(questions)
+        quiz_sessions[session_id]["subjective_evaluations"] = [None] * len(questions)
+        quiz_sessions[session_id]["all_questions"].extend([q["question"] for q in questions if q["question"] not in quiz_sessions[session_id]["all_questions"]])
         return jsonify({
             "passed": False,
             "score": round(score_percentage, 1),
